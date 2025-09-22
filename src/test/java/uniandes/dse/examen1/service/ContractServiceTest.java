@@ -1,16 +1,22 @@
 package uniandes.dse.examen1.service;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assertions.fail;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.orm.jpa.DataJpaTest;
+import org.springframework.boot.test.autoconfigure.orm.jpa.TestEntityManager;
 import org.springframework.context.annotation.Import;
 
 import jakarta.transaction.Transactional;
 import uk.co.jemos.podam.api.PodamFactory;
 import uk.co.jemos.podam.api.PodamFactoryImpl;
+import uniandes.dse.examen1.entities.ContractEntity;
 import uniandes.dse.examen1.entities.SupplierEntity;
 import uniandes.dse.examen1.entities.FactoryEntity;
 import uniandes.dse.examen1.exceptions.RepeatedSupplierException;
@@ -42,6 +48,9 @@ public class ContractServiceTest {
     @Autowired
     SupplierRepository supplierRepository;
 
+    @Autowired
+    private TestEntityManager entityManager;
+
     private PodamFactory factory = new PodamFactoryImpl();
 
     private String name;
@@ -67,11 +76,31 @@ public class ContractServiceTest {
     /**
      * Tests the normal creation of a contract for a factory with an existing
      * supplier
-     * 
+     *
      */
     @Test
     void testCreateContract() {
-        // TODO
+        try {
+            Double contractValue = 1000.0;
+            ContractEntity createdContract = contractService.createContract(name, supplierCode, contractValue);
+
+            assertNotNull(createdContract, "Contract should be created");
+            assertEquals(contractValue, createdContract.getContractValue(), "Contract value is incorrect");
+            assertEquals(Boolean.TRUE, createdContract.getActive(), "Contract should be active");
+            assertEquals(Integer.valueOf(0), createdContract.getSatisfaction(), "Satisfaction should be 0");
+
+            ContractEntity retrieved = entityManager.find(ContractEntity.class, createdContract.getId());
+            assertNotNull(retrieved, "Contract should be stored in database");
+            assertEquals(name, retrieved.getFactory().getName(), "Factory name is incorrect");
+            assertEquals(supplierCode, retrieved.getProvider().getSupplierCode(), "Supplier code is incorrect");
+
+            FactoryEntity factory = factoryRepository.findByName(name).get();
+            SupplierEntity supplier = supplierRepository.findBySupplierCode(supplierCode).get();
+            assertTrue(factory.getProviders().contains(supplier), "Factory should contain supplier in providers list");
+            assertTrue(supplier.getClients().contains(factory), "Supplier should contain factory in clients list");
+        } catch (InvalidContractException e) {
+            fail("No exception should be thrown: " + e.getMessage());
+        }
     }
 
     /**
@@ -80,7 +109,23 @@ public class ContractServiceTest {
      */
     @Test
     void testCreateMultipleContract() {
-        // TODO
+        try {
+            int numberOfContracts = 3;
+            for (int i = 0; i < numberOfContracts; i++) {
+                Double contractValue = 1000.0 + i * 100;
+                ContractEntity createdContract = contractService.createContract(name, supplierCode, contractValue);
+                assertNotNull(createdContract, "Contract " + i + " should be created");
+                assertEquals(contractValue, createdContract.getContractValue(), "Contract value is incorrect for contract " + i);
+            }
+
+            SupplierEntity supplier = supplierRepository.findBySupplierCode(supplierCode).get();
+            long activeContracts = supplier.getContracts().stream()
+                .filter(c -> Boolean.TRUE.equals(c.getActive()))
+                .count();
+            assertEquals(numberOfContracts, activeContracts, "Should have " + numberOfContracts + " active contracts");
+        } catch (InvalidContractException e) {
+            fail("No exception should be thrown: " + e.getMessage());
+        }
     }
 
     /**
@@ -104,7 +149,12 @@ public class ContractServiceTest {
      */
     @Test
     void testCreateContractMissingSupplier() {
-        // TODO
+        String nonExistentSupplierCode = "NONEXISTENT";
+        Double contractValue = 1000.0;
+
+        assertThrows(InvalidContractException.class, () -> {
+            contractService.createContract(name, nonExistentSupplierCode, contractValue);
+        }, "Should throw InvalidContractException for non-existent supplier");
     }
 
     /**
@@ -113,7 +163,12 @@ public class ContractServiceTest {
      */
     @Test
     void testCreateContractMissingFactory() {
-        // TODO
+        String nonExistentFactoryName = "Non Existent Factory";
+        Double contractValue = 1000.0;
+
+        assertThrows(InvalidContractException.class, () -> {
+            contractService.createContract(nonExistentFactoryName, supplierCode, contractValue);
+        }, "Should throw InvalidContractException for non-existent factory");
     }
 
     /**
@@ -122,7 +177,13 @@ public class ContractServiceTest {
      */
     @Test
     void testCreateContractWrongValue() {
-        // TODO
+        assertThrows(InvalidContractException.class, () -> {
+            contractService.createContract(name, supplierCode, -100.0);
+        }, "Should throw InvalidContractException for negative contract value");
+
+        assertThrows(InvalidContractException.class, () -> {
+            contractService.createContract(name, supplierCode, 0.0);
+        }, "Should throw InvalidContractException for zero contract value");
     }
 
     /**
@@ -131,7 +192,21 @@ public class ContractServiceTest {
      */
     @Test
     void testCreateContractCapacityExceeded() {
-        // TODO
+        try {
+            SupplierEntity limitedSupplier = factory.manufacturePojo(SupplierEntity.class);
+            limitedSupplier.setCapacity(2);
+            limitedSupplier = supplierService.createSupplier(limitedSupplier);
+            String limitedSupplierCode = limitedSupplier.getSupplierCode();
+            contractService.createContract(name, limitedSupplierCode, 1000.0);
+            contractService.createContract(name, limitedSupplierCode, 1100.0);
+
+            assertThrows(InvalidContractException.class, () -> {
+                contractService.createContract(name, limitedSupplierCode, 1200.0);
+            }, "Should throw InvalidContractException when supplier capacity is exceeded");
+
+        } catch (RepeatedSupplierException | InvalidContractException e) {
+            fail("Setup should not fail: " + e.getMessage());
+        }
     }
 
 }

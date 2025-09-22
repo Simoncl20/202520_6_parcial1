@@ -1,11 +1,16 @@
 package uniandes.dse.examen1.entities;
 
 import jakarta.persistence.Entity;
+import jakarta.persistence.FetchType;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
+import jakarta.persistence.ManyToOne;
+import jakarta.persistence.OneToMany;
+import jakarta.persistence.OneToOne;
 import lombok.Data;
 import uk.co.jemos.podam.common.PodamExclude;
+import uk.co.jemos.podam.common.PodamFloatValue;
 
 @Data
 @Entity
@@ -33,6 +38,13 @@ public class ContractEntity {
      */
     private Integer satisfaction;
 
-    // TODO
+    
+    @PodamExclude
+    @ManyToOne
+    private FactoryEntity factory; 
+
+    @PodamExclude
+    @ManyToOne(fetch = FetchType.LAZY)
+    private SupplierEntity provider;
 
 }
